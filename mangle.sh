@@ -157,6 +157,11 @@ function parseArgs()
     export FFMPEG_IN_OPTS
     export FFMPEG_OUT_OPTS
     export UNUSED_ARGS
+
+    # Set default FFMPEG_OUT_OPTS if not set
+    if [[ -z "$FFMPEG_OUT_OPTS" ]]; then
+        FFMPEG_OUT_OPTS=""
+    fi
 }
 
 function cmd()
@@ -236,36 +241,45 @@ echo "FFMPEG_IN_OPTS:  $(eval echo "$FFMPEG_IN_OPTS")"
 echo "FFMPEG_OUT_OPTS: $(eval echo "$FFMPEG_OUT_OPTS")"
 echo "SOX_OPTS:        $(eval echo "$SOX_OPTS")"
 
-echo "Extracting raw image data.."
+echo "Extracting raw image data..."
 cmdSilent "ffmpeg -y -i \"$1\" -pix_fmt $YUV_FMT $FFMPEG_IN_OPTS  $TMP_DIR/tmp.yuv"
 
-[[ $AUDIO = *[!\ ]* ]] && echo "Extracting audio track.."
+[[ $AUDIO = *[!\ ]* ]] && echo "Extracting audio track..."
 [[ $AUDIO = *[!\ ]* ]] && cmdSilent "ffmpeg -y -i \"$1\" -q:a 0 -map a $TMP_DIR/audio_in.${AUDIO_TYPE}"
 
-echo "Processing as sound.."
+echo "Processing as sound..."
 mv "$TMP_DIR"/tmp.yuv "$TMP_DIR"/tmp_audio_in."$S_TYPE"
-cmdSilent sox --bits "$BITS" -c1 -r44100 --encoding unsigned-integer -t "$S_TYPE" "$TMP_DIR"/tmp_audio_in."$S_TYPE"  \
-              --bits "$BITS" -c1 -r44100 --encoding unsigned-integer -t "$S_TYPE" "$TMP_DIR"/tmp_audio_out."$S_TYPE" \
-              "$SOX_OPTS"
+cmdSilent sox --buffer 524288 --bits "$BITS" -c1 -r44100 --encoding unsigned-integer -t "$S_TYPE" \
+    "$TMP_DIR"/tmp_audio_in."$S_TYPE" \
+    --bits "$BITS" -c1 -r44100 --encoding unsigned-integer -t "$S_TYPE" \
+    "$TMP_DIR"/tmp_audio_out."$S_TYPE" \
+    $SOX_OPTS \
+    trim 0
 
-[[ $AUDIO = *[!\ ]* ]] && echo "Processing audio track as sound.."
+[[ $AUDIO = *[!\ ]* ]] && echo "Processing audio track as sound..."
 [[ $AUDIO = *[!\ ]* ]] && cmdSilent sox "$TMP_DIR"/audio_in.${AUDIO_TYPE}  \
                                         "$TMP_DIR"/audio_out.${AUDIO_TYPE} \
                                         "$SOX_OPTS"
 
-echo "Recreating image data from audio.."
-cmdSilent ffmpeg -y \
-                 "$(eval echo $FFMPEG_OUT_OPTS)" \
-                 -f rawvideo -pix_fmt $YUV_FMT -s $RES \
-                 -i $TMP_DIR/tmp_audio_out.$S_TYPE \
-                 $AUDIO \
-                 $VIDEO \
-                 \"$2\"
-
-#[[ $AUDIO = *[!\ ]* ]] && echo "Injecting modified audio.."
-#[[ $AUDIO = *[!\ ]* ]] && cmdSilent ffmpeg -y \
-#                                           -i \"$2\" \
-#                                           $AUDIO \
-#                                           \"$2\"
+echo "Recreating image data from audio..."
+if [[ -n "$FFMPEG_OUT_OPTS" ]]; then
+    # If blending is used
+    cmdSilent ffmpeg -y \
+        "$(eval echo $FFMPEG_OUT_OPTS)" \
+        -f rawvideo -pix_fmt $YUV_FMT -s $RES \
+        -i $TMP_DIR/tmp_audio_out.$S_TYPE \
+        $AUDIO \
+        $VIDEO \
+        -pix_fmt $YUV_FMT \
+        \"$2\"
+else
+    # If blending is not used
+    cmdSilent ffmpeg -y \
+        -f rawvideo -pix_fmt $YUV_FMT -s $RES -framerate 1 \
+        -i $TMP_DIR/tmp_audio_out.$S_TYPE \
+        -frames:v 1 \
+        -pix_fmt $YUV_FMT \
+        \"$2\"
+fi
 
 cleanup 0
