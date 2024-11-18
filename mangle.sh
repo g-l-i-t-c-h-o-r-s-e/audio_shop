@@ -248,7 +248,7 @@ function checkDependencies()
     done
 }
 
-checkDependencies ffprobe ffmpeg sox tr file
+checkDependencies ffprobe ffmpeg sox tr
 parseArgs "$@"
 
 # Append 'format=yuv420p' if the output file is an MP4
