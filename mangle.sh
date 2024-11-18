@@ -95,11 +95,14 @@ function helpNeeded()
     fi
 }
 
-function isImage() {
-    local extension="${1##*.}"
-    extension=$(echo "$extension" | tr '[:upper:]' '[:lower:]')
+function isImage()
+{
+    local filename="$1"
+    local extension="${filename##*.}"
+    extension="${extension,,}"  # Convert to lowercase
+
     case "$extension" in
-        jpg|jpeg|png|webp|bmp|tiff|gif)
+        jpg|jpeg|png|webp|bmp|gif|tiff)
             echo "true"
             ;;
         *)
@@ -184,7 +187,6 @@ function parseArgs()
     export FFMPEG_IN_OPTS
     export FFMPEG_OUT_OPTS
     export UNUSED_ARGS
-    export -f isImage
 }
 
 function cmd()
