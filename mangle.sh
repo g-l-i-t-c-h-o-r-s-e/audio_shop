@@ -1,16 +1,22 @@
 #!/usr/bin/env bash
 
+# Determine the directory where the script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 function cleanup()
 {
     if [[ -z "${TMP_DIR}" ]]; then
         exit "$1"
-    elif [[ ! "${TMP_DIR}" == "/tmp/audio_shop"* ]]; then
+    elif [[ ! "${TMP_DIR}" == "${SCRIPT_DIR}/tmp_audio_shop_"* ]]; then
         exit "$1"
     fi
 
     rm -rf "${TMP_DIR}"
     exit "$1"
 }
+
+# Ensure cleanup is called on script exit, interruption, or termination
+trap 'cleanup 1' EXIT SIGINT SIGTERM
 
 function printDependencies()
 {
@@ -222,14 +228,10 @@ function checkDependencies()
 checkDependencies ffprobe ffmpeg sox tr
 parseArgs "$@"
 
-# Append 'format=yuv420p' if the output file is an MP4
-if [[ "$2" =~ \.mp4$ ]]; then
-    # Remove the closing quote, append the format filter, and re-add the closing quote
-    FFMPEG_OUT_OPTS="${FFMPEG_OUT_OPTS%\\\"},format=yuv420p\\\""
-fi
+# Create a unique temporary directory within the script's directory
+TMP_DIR=$(mktemp -d "${SCRIPT_DIR}/tmp_audio_shop_XXXXXX")
 
 AUDIO_TYPE="mp3"
-TMP_DIR=$(mktemp -d "/tmp/audio_shop-XXXXX")
 RES=${RES:-"$(getResolution "$1" x)"}
 VIDEO=${VIDEO:-"$(getFrames "$1")"}
 AUDIO=${AUDIO:-"$(getAudio "$1")"}
@@ -268,8 +270,8 @@ cmdSilent ffmpeg -y \
                  $VIDEO \
                  \"$2\"
 
-#[[ $AUDIO = *[!\ ]* ]] && echo "Injecting modified audio.."
-#[[ $AUDIO = *[!\ ]* ]] && cmdSilent ffmpeg -y \
+# [[ $AUDIO = *[!\ ]* ]] && echo "Injecting modified audio.."
+# [[ $AUDIO = *[!\ ]* ]] && cmdSilent ffmpeg -y \
 #                                           -i \"$2\" \
 #                                           $AUDIO \
 #                                           \"$2\"
