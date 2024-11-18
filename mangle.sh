@@ -96,13 +96,16 @@ function helpNeeded()
 }
 
 function isImage() {
-    local mimetype
-    mimetype=$(file --mime-type -b "$1")
-    if [[ $mimetype == image/* ]]; then
-        echo "true"
-    else
-        echo "false"
-    fi
+    local extension="${1##*.}"
+    extension=$(echo "$extension" | tr '[:upper:]' '[:lower:]')
+    case "$extension" in
+        jpg|jpeg|png|webp|bmp|tiff|gif)
+            echo "true"
+            ;;
+        *)
+            echo "false"
+            ;;
+    esac
 }
 
 function parseArgs()
