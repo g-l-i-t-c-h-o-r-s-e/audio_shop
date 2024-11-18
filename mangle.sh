@@ -222,6 +222,12 @@ function checkDependencies()
 checkDependencies ffprobe ffmpeg sox tr
 parseArgs "$@"
 
+# Append 'format=yuv420p' if the output file is an MP4
+if [[ "$2" =~ \.mp4$ ]]; then
+    # Remove the closing quote, append the format filter, and re-add the closing quote
+    FFMPEG_OUT_OPTS="${FFMPEG_OUT_OPTS%\\\"},format=yuv420p\\\""
+fi
+
 AUDIO_TYPE="mp3"
 TMP_DIR=$(mktemp -d "/tmp/audio_shop-XXXXX")
 RES=${RES:-"$(getResolution "$1" x)"}
