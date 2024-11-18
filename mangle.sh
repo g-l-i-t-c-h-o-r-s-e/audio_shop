@@ -64,10 +64,10 @@ function printHelp()
     printEffects
     echo ""
     echo "Examples:"
-    echo "./mangle.sh in.jpg out.jpg vol 11"
-    echo "./mangle.sh in.mp4 out.mp4 echo 0.8 0.88 60 0.4"
-    echo "./mangle.sh in.mp4 out.mp4 pitch 5 --res=1280x720"
-    echo "./mangle.sh in.mp4 out.mp4 pitch 5 --blend=0.75 --color-format=yuv444p --bits=8"
+    echo "./mangle in.jpg out.jpg vol 11"
+    echo "./mangle in.mp4 out.mp4 echo 0.8 0.88 60 0.4"
+    echo "./mangle in.mp4 out.mp4 pitch 5 --res=1280x720"
+    echo "./mangle in.mp4 out.mp4 pitch 5 --blend=0.75 --color-format=yuv444p --bits=8"
     echo ""
     echo "A full list of effects can be found here: http://sox.sourceforge.net/sox.html#EFFECTS"
 
@@ -163,11 +163,6 @@ function parseArgs()
     export FFMPEG_IN_OPTS
     export FFMPEG_OUT_OPTS
     export UNUSED_ARGS
-
-    # Set default FFMPEG_OUT_OPTS if not set (i.e., if --blend is not used)
-    if [[ -z "$FFMPEG_OUT_OPTS" ]]; then
-        FFMPEG_OUT_OPTS="-pix_fmt \$YUV_FMT"
-    fi
 }
 
 function cmd()
@@ -257,37 +252,23 @@ cmdSilent "ffmpeg -y -i \"$1\" -pix_fmt $YUV_FMT $FFMPEG_IN_OPTS  $TMP_DIR/tmp.y
 
 echo "Processing as sound.."
 mv "$TMP_DIR"/tmp.yuv "$TMP_DIR"/tmp_audio_in."$S_TYPE"
-cmdSilent sox --bits "$BITS" -c1 -r44100 --encoding unsigned-integer -t "$S_TYPE" \
-    "$TMP_DIR"/tmp_audio_in."$S_TYPE" \
-    --bits "$BITS" -c1 -r44100 --encoding unsigned-integer -t "$S_TYPE" \
-    "$TMP_DIR"/tmp_audio_out."$S_TYPE" \
-    "$SOX_OPTS" \
-    trim 0
+cmdSilent sox --bits "$BITS" -c1 -r44100 --encoding unsigned-integer -t "$S_TYPE" "$TMP_DIR"/tmp_audio_in."$S_TYPE"  \
+              --bits "$BITS" -c1 -r44100 --encoding unsigned-integer -t "$S_TYPE" "$TMP_DIR"/tmp_audio_out."$S_TYPE" \
+              "$SOX_OPTS"
 
 [[ $AUDIO = *[!\ ]* ]] && echo "Processing audio track as sound.."
 [[ $AUDIO = *[!\ ]* ]] && cmdSilent sox "$TMP_DIR"/audio_in.${AUDIO_TYPE}  \
                                         "$TMP_DIR"/audio_out.${AUDIO_TYPE} \
                                         "$SOX_OPTS"
 
-echo "Recreating image data.."
-if [[ -n "$FFMPEG_OUT_OPTS" && "$FFMPEG_OUT_OPTS" == *"-filter_complex"* ]]; then
-    # If blending is used
-    cmdSilent ffmpeg -y \
-        $(eval echo "$FFMPEG_OUT_OPTS") \
-        -f rawvideo -pix_fmt $YUV_FMT -s $RES \
-        -i "$TMP_DIR"/tmp_audio_out."$S_TYPE" \
-        $AUDIO \
-        $VIDEO \
-        "$2"
-else
-    # If blending is not used
-    cmdSilent ffmpeg -y \
-        -f rawvideo -pix_fmt $YUV_FMT -s $RES -framerate 1 \
-        -i "$TMP_DIR"/tmp_audio_out."$S_TYPE" \
-        -frames:v 1 \
-        -pix_fmt $YUV_FMT \
-        "$2"
-fi
+echo "Recreating image data from audio.."
+cmdSilent ffmpeg -y \
+                 "$(eval echo $FFMPEG_OUT_OPTS)" \
+                 -f rawvideo -pix_fmt $YUV_FMT -s $RES \
+                 -i $TMP_DIR/tmp_audio_out.$S_TYPE \
+                 $AUDIO \
+                 $VIDEO \
+                 \"$2\"
 
 # [[ $AUDIO = *[!\ ]* ]] && echo "Injecting modified audio.."
 # [[ $AUDIO = *[!\ ]* ]] && cmdSilent ffmpeg -y \
