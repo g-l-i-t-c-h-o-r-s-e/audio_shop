@@ -1,22 +1,16 @@
 #!/usr/bin/env bash
 
-# Determine the directory where the script is located
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
 function cleanup()
 {
     if [[ -z "${TMP_DIR}" ]]; then
         exit "$1"
-    elif [[ ! "${TMP_DIR}" == "${SCRIPT_DIR}/tmp_audio_shop_"* ]]; then
+    elif [[ ! "${TMP_DIR}" == "/tmp/audio_shop"* ]]; then
         exit "$1"
     fi
 
     rm -rf "${TMP_DIR}"
     exit "$1"
 }
-
-# Ensure cleanup is called on script exit, interruption, or termination
-trap 'cleanup 1' EXIT SIGINT SIGTERM
 
 function printDependencies()
 {
@@ -64,10 +58,10 @@ function printHelp()
     printEffects
     echo ""
     echo "Examples:"
-    echo "./mangle.sh in.jpg out.jpg vol 11"
-    echo "./mangle.sh in.mp4 out.mp4 echo 0.8 0.88 60 0.4"
-    echo "./mangle.sh in.mp4 out.mp4 pitch 5 --res=1280x720"
-    echo "./mangle.sh in.mp4 out.mp4 pitch 5 --blend=0.75 --color-format=yuv444p --bits=8"
+    echo "./mangle in.jpg out.jpg vol 11"
+    echo "./mangle in.mp4 out.mp4 echo 0.8 0.88 60 0.4"
+    echo "./mangle in.mp4 out.mp4 pitch 5 --res=1280x720"
+    echo "./mangle in.mp4 out.mp4 pitch 5 --blend=0.75 --color-format=yuv444p --bits=8"
     echo ""
     echo "A full list of effects can be found here: http://sox.sourceforge.net/sox.html#EFFECTS"
 
@@ -93,22 +87,6 @@ function helpNeeded()
          echo -e "No effect specified\n"
         printHelp
     fi
-}
-
-function isImage()
-{
-    local filename="$1"
-    local extension="${filename##*.}"
-    extension="${extension,,}"  # Convert to lowercase
-
-    case "$extension" in
-        jpg|jpeg|png|webp|bmp|gif|tiff)
-            echo "true"
-            ;;
-        *)
-            echo "false"
-            ;;
-    esac
 }
 
 function parseArgs()
@@ -145,20 +123,12 @@ function parseArgs()
         ;;
         --blend=*)
             BLEND=${i#*=}
-            if [[ $(isImage "$1") == "true" ]]; then
-                # Adjust filter chain for images
-                FFMPEG_OUT_OPTS="$FFMPEG_OUT_OPTS -filter_complex \\\""
-                FFMPEG_OUT_OPTS="$FFMPEG_OUT_OPTS [0:v]scale=\${RES}[top]\;"
-                FFMPEG_OUT_OPTS="$FFMPEG_OUT_OPTS [1:v]scale=\${RES},format=rgba,colorchannelmixer=aa=${BLEND}[bottom]\;"
-                FFMPEG_OUT_OPTS="$FFMPEG_OUT_OPTS [top][bottom]overlay\\\""
-            else
-                # Original filter chain for videos
-                FFMPEG_OUT_OPTS="$FFMPEG_OUT_OPTS -f rawvideo -pix_fmt \$YUV_FMT -s \${RES} -i \${TMP_DIR}/tmp_audio_out.\${S_TYPE}"
-                FFMPEG_OUT_OPTS="$FFMPEG_OUT_OPTS -filter_complex \\\""
-                FFMPEG_OUT_OPTS="$FFMPEG_OUT_OPTS [0:v]setpts=PTS-STARTPTS, scale=\${RES}[top]\;"
-                FFMPEG_OUT_OPTS="$FFMPEG_OUT_OPTS [1:v]setpts=PTS-STARTPTS, scale=\${RES},format=yuva444p,colorchannelmixer=aa=${BLEND}[bottom]\;"
-                FFMPEG_OUT_OPTS="$FFMPEG_OUT_OPTS [top][bottom]overlay=shortest=1\\\""
-            fi
+            FFMPEG_OUT_OPTS="$FFMPEG_OUT_OPTS -f rawvideo -pix_fmt \$YUV_FMT -s \${RES} -i \${TMP_DIR}/tmp_audio_out.\${S_TYPE}"
+            FFMPEG_OUT_OPTS="$FFMPEG_OUT_OPTS -filter_complex \\\""
+            FFMPEG_OUT_OPTS="$FFMPEG_OUT_OPTS [0:v]setpts=PTS-STARTPTS, scale=\${RES}[top]\;"
+            FFMPEG_OUT_OPTS="$FFMPEG_OUT_OPTS [1:v]setpts=PTS-STARTPTS, scale=\${RES},"
+            FFMPEG_OUT_OPTS="$FFMPEG_OUT_OPTS format=yuva444p,colorchannelmixer=aa=${BLEND}[bottom]\;"
+            FFMPEG_OUT_OPTS="$FFMPEG_OUT_OPTS [top][bottom]overlay=shortest=1\\\""
         ;;
         --color-format=*)
             YUV_FMT=${i#*=}
@@ -188,9 +158,9 @@ function parseArgs()
     export FFMPEG_OUT_OPTS
     export UNUSED_ARGS
 
-    # Set default FFMPEG_OUT_OPTS if not set (i.e., if --blend is not used)
+    # Set default FFMPEG_OUT_OPTS if not set
     if [[ -z "$FFMPEG_OUT_OPTS" ]]; then
-        FFMPEG_OUT_OPTS="-f rawvideo -pix_fmt \$YUV_FMT -s \${RES}"
+        FFMPEG_OUT_OPTS=""
     fi
 }
 
@@ -228,11 +198,7 @@ function getResolution()
 
 function getFrames()
 {
-    if [[ $(isImage "$1") == "true" ]]; then
-        echo ""
-        return 0
-    fi
-    FRAMES=$(cmd ffprobe -v error -select_streams v:0 -show_entries stream=nb_frames -of default=noprint_wrappers=1:nokey=1 "$1")
+    FRAMES=$(cmd ffprobe -v error -select_streams v:0 -show_entries stream=nb_frames -of default=noprint_wrappers=1:nokey=1 \"$1\")
     REGEXP_INTEGER='^[0-9]+$'
     if ! [[ $FRAMES =~ $REGEXP_INTEGER ]] ; then
         echo ""
@@ -261,16 +227,8 @@ function checkDependencies()
 checkDependencies ffprobe ffmpeg sox tr
 parseArgs "$@"
 
-# Append 'format=yuv420p' if the output file is an MP4
-if [[ "$2" =~ \.mp4$ ]]; then
-    # Remove the closing quote, append the format filter, and re-add the closing quote
-    FFMPEG_OUT_OPTS="${FFMPEG_OUT_OPTS%\\\"},format=yuv420p\\\""
-fi
-
-# Create a unique temporary directory within the script's directory
-TMP_DIR=$(mktemp -d "${SCRIPT_DIR}/tmp_audio_shop_XXXXXX")
-
 AUDIO_TYPE="mp3"
+TMP_DIR=$(mktemp -d "/tmp/audio_shop-XXXXX")
 RES=${RES:-"$(getResolution "$1" x)"}
 VIDEO=${VIDEO:-"$(getFrames "$1")"}
 AUDIO=${AUDIO:-"$(getAudio "$1")"}
@@ -291,61 +249,37 @@ cmdSilent "ffmpeg -y -i \"$1\" -pix_fmt $YUV_FMT $FFMPEG_IN_OPTS  $TMP_DIR/tmp.y
 
 echo "Processing as sound..."
 mv "$TMP_DIR"/tmp.yuv "$TMP_DIR"/tmp_audio_in."$S_TYPE"
-cmdSilent sox --bits "$BITS" -c1 -r44100 --encoding unsigned-integer -t "$S_TYPE" "$TMP_DIR"/tmp_audio_in."$S_TYPE"  \
-              --bits "$BITS" -c1 -r44100 --encoding unsigned-integer -t "$S_TYPE" "$TMP_DIR"/tmp_audio_out."$S_TYPE" \
-              $SOX_OPTS
+cmdSilent sox --buffer 524288 --bits "$BITS" -c1 -r44100 --encoding unsigned-integer -t "$S_TYPE" \
+    "$TMP_DIR"/tmp_audio_in."$S_TYPE" \
+    --bits "$BITS" -c1 -r44100 --encoding unsigned-integer -t "$S_TYPE" \
+    "$TMP_DIR"/tmp_audio_out."$S_TYPE" \
+    $SOX_OPTS \
+    trim 0
 
 [[ $AUDIO = *[!\ ]* ]] && echo "Processing audio track as sound..."
 [[ $AUDIO = *[!\ ]* ]] && cmdSilent sox "$TMP_DIR"/audio_in.${AUDIO_TYPE}  \
                                         "$TMP_DIR"/audio_out.${AUDIO_TYPE} \
-                                        $SOX_OPTS
+                                        "$SOX_OPTS"
 
 echo "Recreating image data from audio..."
-if [[ $(isImage "$1") == "true" ]]; then
-    # Processing an image
-    if [[ -n "$FFMPEG_OUT_OPTS" && "$FFMPEG_OUT_OPTS" == *"-filter_complex"* ]]; then
-        # Blend case
-        cmdSilent ffmpeg -y \
-            $(eval echo $FFMPEG_OUT_OPTS) \
-            -i "$1" \
-            -f rawvideo -pix_fmt $YUV_FMT -s $RES \
-            -i "$TMP_DIR"/tmp_audio_out."$S_TYPE" \
-            -pix_fmt $YUV_FMT \
-            "$2"
-    else
-        # No blend case
-        cmdSilent ffmpeg -y \
-            -f rawvideo -pix_fmt $YUV_FMT -s $RES \
-            -i "$TMP_DIR"/tmp_audio_out."$S_TYPE" \
-            -pix_fmt $YUV_FMT \
-            "$2"
-    fi
+if [[ -n "$FFMPEG_OUT_OPTS" ]]; then
+    # If blending is used
+    cmdSilent ffmpeg -y \
+        "$(eval echo $FFMPEG_OUT_OPTS)" \
+        -f rawvideo -pix_fmt $YUV_FMT -s $RES \
+        -i $TMP_DIR/tmp_audio_out.$S_TYPE \
+        $AUDIO \
+        $VIDEO \
+        -pix_fmt $YUV_FMT \
+        \"$2\"
 else
-    # Processing a video
-    if [[ -n "$FFMPEG_OUT_OPTS" && "$FFMPEG_OUT_OPTS" == *"-filter_complex"* ]]; then
-        # Blend case
-        cmdSilent ffmpeg -y \
-            $(eval echo $FFMPEG_OUT_OPTS) \
-            -f rawvideo -pix_fmt $YUV_FMT -s $RES \
-            -i "$TMP_DIR"/tmp_audio_out."$S_TYPE" \
-            $AUDIO \
-            $VIDEO \
-            "$2"
-    else
-        # No blend case
-        cmdSilent ffmpeg -y \
-            -f rawvideo -pix_fmt $YUV_FMT -s $RES \
-            -i "$TMP_DIR"/tmp_audio_out."$S_TYPE" \
-            $AUDIO \
-            $VIDEO \
-            "$2"
-    fi
+    # If blending is not used
+    cmdSilent ffmpeg -y \
+        -f rawvideo -pix_fmt $YUV_FMT -s $RES -framerate 1 \
+        -i $TMP_DIR/tmp_audio_out.$S_TYPE \
+        -frames:v 1 \
+        -pix_fmt $YUV_FMT \
+        \"$2\"
 fi
-
-# [[ $AUDIO = *[!\ ]* ]] && echo "Injecting modified audio..."
-# [[ $AUDIO = *[!\ ]* ]] && cmdSilent ffmpeg -y \
-#                                           -i \"$2\" \
-#                                           $AUDIO \
-#                                           \"$2\"
 
 cleanup 0
