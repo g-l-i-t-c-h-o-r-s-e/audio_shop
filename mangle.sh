@@ -56,7 +56,7 @@ function printHelp()
     echo "Options:"
     echo "--bits=X          -- Set audio sample size in bits, 8/16/24"
     echo "--blend=X         -- Blend the distorted video with original video, 0.5"
-    echo "--color-format=X  -- Color space/format, rgb24/yuv444p/yuyv422. Full list: $ ffmpeg -pix_fmts"
+    echo "--color-format=X  -- Color space/format, rgb24/yuv444p/yuyv422. Full list: \$ ffmpeg -pix_fmts"
     echo "--effects         -- Suggest some effects"
     echo "--help            -- Display this information"
     echo "--res=WxH         -- Set output resolution, 1920x1080"
@@ -95,6 +95,21 @@ function helpNeeded()
     fi
 }
 
+function isImage() {
+    local mimetype
+    mimetype=$(file --mime-type -b "$1")
+    if [[ $mimetype == image/* ]]; then
+        echo "true"
+    else
+        echo "false"
+    fi
+}
+
+helpNeeded "$@"
+
+INPUT_FILE="$1"
+OUTPUT_FILE="$2"
+
 function parseArgs()
 {
     # Default values
@@ -129,12 +144,20 @@ function parseArgs()
         ;;
         --blend=*)
             BLEND=${i#*=}
-            FFMPEG_OUT_OPTS="$FFMPEG_OUT_OPTS -f rawvideo -pix_fmt \$YUV_FMT -s \${RES} -i \${TMP_DIR}/tmp_audio_out.\${S_TYPE}"
-            FFMPEG_OUT_OPTS="$FFMPEG_OUT_OPTS -filter_complex \\\""
-            FFMPEG_OUT_OPTS="$FFMPEG_OUT_OPTS [0:v]setpts=PTS-STARTPTS, scale=\${RES}[top]\;"
-            FFMPEG_OUT_OPTS="$FFMPEG_OUT_OPTS [1:v]setpts=PTS-STARTPTS, scale=\${RES},"
-            FFMPEG_OUT_OPTS="$FFMPEG_OUT_OPTS format=yuva444p,colorchannelmixer=aa=${BLEND}[bottom]\;"
-            FFMPEG_OUT_OPTS="$FFMPEG_OUT_OPTS [top][bottom]overlay=shortest=1\\\""
+            if [[ $(isImage "$INPUT_FILE") == "true" ]]; then
+                # Adjust filter chain for images
+                FFMPEG_OUT_OPTS="$FFMPEG_OUT_OPTS -filter_complex \\\""
+                FFMPEG_OUT_OPTS="$FFMPEG_OUT_OPTS [0:v]scale=\${RES}[top]\;"
+                FFMPEG_OUT_OPTS="$FFMPEG_OUT_OPTS [1:v]scale=\${RES},format=rgba,colorchannelmixer=aa=${BLEND}[bottom]\;"
+                FFMPEG_OUT_OPTS="$FFMPEG_OUT_OPTS [top][bottom]overlay\\\""
+            else
+                # Original filter chain for videos
+                FFMPEG_OUT_OPTS="$FFMPEG_OUT_OPTS -f rawvideo -pix_fmt \$YUV_FMT -s \${RES} -i \${TMP_DIR}/tmp_audio_out.\${S_TYPE}"
+                FFMPEG_OUT_OPTS="$FFMPEG_OUT_OPTS -filter_complex \\\""
+                FFMPEG_OUT_OPTS="$FFMPEG_OUT_OPTS [0:v]setpts=PTS-STARTPTS, scale=\${RES}[top]\;"
+                FFMPEG_OUT_OPTS="$FFMPEG_OUT_OPTS [1:v]setpts=PTS-STARTPTS, scale=\${RES},format=yuva444p,colorchannelmixer=aa=${BLEND}[bottom]\;"
+                FFMPEG_OUT_OPTS="$FFMPEG_OUT_OPTS [top][bottom]overlay=shortest=1\\\""
+            fi
         ;;
         --color-format=*)
             YUV_FMT=${i#*=}
@@ -153,8 +176,6 @@ function parseArgs()
     esac
     done
 
-    helpNeeded "$@"
-
     export BITS
     export YUV_FMT
 
@@ -163,6 +184,8 @@ function parseArgs()
     export FFMPEG_IN_OPTS
     export FFMPEG_OUT_OPTS
     export UNUSED_ARGS
+
+    export -f isImage
 }
 
 function cmd()
@@ -192,14 +215,18 @@ function cmdSilent()
 
 function getResolution()
 {
-    eval $(cmd ffprobe -v error -of flat=s=_ -select_streams v:0 -show_entries stream=height,width \"$1\")
+    eval $(cmd ffprobe -v error -of flat=s=_ -select_streams v:0 -show_entries stream=height,width \"$INPUT_FILE\")
     RES="${streams_stream_0_width}${2}${streams_stream_0_height}"
     echo "$RES"
 }
 
 function getFrames()
 {
-    FRAMES=$(cmd ffprobe -v error -select_streams v:0 -show_entries stream=nb_frames -of default=noprint_wrappers=1:nokey=1 \"$1\")
+    if [[ $(isImage "$INPUT_FILE") == "true" ]]; then
+        echo ""
+        return 0
+    fi
+    FRAMES=$(cmd ffprobe -v error -select_streams v:0 -show_entries stream=nb_frames -of default=noprint_wrappers=1:nokey=1 \"$INPUT_FILE\")
     REGEXP_INTEGER='^[0-9]+$'
     if ! [[ $FRAMES =~ $REGEXP_INTEGER ]] ; then
         echo ""
@@ -211,7 +238,7 @@ function getFrames()
 
 function getAudio()
 {
-    AUDIO=$(cmd ffprobe -i \"$1\" -show_streams -select_streams a -loglevel error)
+    AUDIO=$(cmd ffprobe -i \"$INPUT_FILE\" -show_streams -select_streams a -loglevel error)
     [[ $AUDIO = *[!\ ]* ]] && echo "-i $TMP_DIR/audio_out.${AUDIO_TYPE}"
 }
 
@@ -225,16 +252,27 @@ function checkDependencies()
     done
 }
 
-checkDependencies ffprobe ffmpeg sox tr
+checkDependencies ffprobe ffmpeg sox tr file
 parseArgs "$@"
+
+# Append 'format=yuv420p' if the output file is an MP4
+if [[ "$OUTPUT_FILE" =~ \.mp4$ ]]; then
+    if [[ $FFMPEG_OUT_OPTS == *-filter_complex* ]]; then
+        # Remove the closing quote, append the format filter, and re-add the closing quote
+        FFMPEG_OUT_OPTS="${FFMPEG_OUT_OPTS%\\\"},format=yuv420p\\\""
+    else
+        # No filter_complex yet, add format filter
+        FFMPEG_OUT_OPTS="$FFMPEG_OUT_OPTS -filter_complex \\\"format=yuv420p\\\""
+    fi
+fi
 
 # Create a unique temporary directory within the script's directory
 TMP_DIR=$(mktemp -d "${SCRIPT_DIR}/tmp_audio_shop_XXXXXX")
 
 AUDIO_TYPE="mp3"
-RES=${RES:-"$(getResolution "$1" x)"}
-VIDEO=${VIDEO:-"$(getFrames "$1")"}
-AUDIO=${AUDIO:-"$(getAudio "$1")"}
+RES=${RES:-"$(getResolution "$INPUT_FILE" x)"}
+VIDEO=${VIDEO:-"$(getFrames)"}
+AUDIO=${AUDIO:-"$(getAudio)"}
 
 echo "TMP_DIR:         $TMP_DIR"
 echo "RES:             $RES"
@@ -245,35 +283,41 @@ echo "FFMPEG_OUT_OPTS: $(eval echo "$FFMPEG_OUT_OPTS")"
 echo "SOX_OPTS:        $(eval echo "$SOX_OPTS")"
 
 echo "Extracting raw image data.."
-cmdSilent "ffmpeg -y -i \"$1\" -pix_fmt $YUV_FMT $FFMPEG_IN_OPTS  $TMP_DIR/tmp.yuv"
+cmdSilent "ffmpeg -y -i \"$INPUT_FILE\" -pix_fmt $YUV_FMT $FFMPEG_IN_OPTS  $TMP_DIR/tmp.yuv"
 
 [[ $AUDIO = *[!\ ]* ]] && echo "Extracting audio track.."
-[[ $AUDIO = *[!\ ]* ]] && cmdSilent "ffmpeg -y -i \"$1\" -q:a 0 -map a $TMP_DIR/audio_in.${AUDIO_TYPE}"
+[[ $AUDIO = *[!\ ]* ]] && cmdSilent "ffmpeg -y -i \"$INPUT_FILE\" -q:a 0 -map a $TMP_DIR/audio_in.${AUDIO_TYPE}"
 
 echo "Processing as sound.."
 mv "$TMP_DIR"/tmp.yuv "$TMP_DIR"/tmp_audio_in."$S_TYPE"
 cmdSilent sox --bits "$BITS" -c1 -r44100 --encoding unsigned-integer -t "$S_TYPE" "$TMP_DIR"/tmp_audio_in."$S_TYPE"  \
               --bits "$BITS" -c1 -r44100 --encoding unsigned-integer -t "$S_TYPE" "$TMP_DIR"/tmp_audio_out."$S_TYPE" \
-              "$SOX_OPTS"
+              $SOX_OPTS
 
 [[ $AUDIO = *[!\ ]* ]] && echo "Processing audio track as sound.."
 [[ $AUDIO = *[!\ ]* ]] && cmdSilent sox "$TMP_DIR"/audio_in.${AUDIO_TYPE}  \
                                         "$TMP_DIR"/audio_out.${AUDIO_TYPE} \
-                                        "$SOX_OPTS"
+                                        $SOX_OPTS
 
 echo "Recreating image data from audio.."
-cmdSilent ffmpeg -y \
-                 "$(eval echo $FFMPEG_OUT_OPTS)" \
-                 -f rawvideo -pix_fmt $YUV_FMT -s $RES \
-                 -i $TMP_DIR/tmp_audio_out.$S_TYPE \
-                 $AUDIO \
-                 $VIDEO \
-                 \"$2\"
-
-# [[ $AUDIO = *[!\ ]* ]] && echo "Injecting modified audio.."
-# [[ $AUDIO = *[!\ ]* ]] && cmdSilent ffmpeg -y \
-#                                           -i \"$2\" \
-#                                           $AUDIO \
-#                                           \"$2\"
+if [[ $(isImage "$INPUT_FILE") == "true" ]]; then
+    # Processing an image
+    cmdSilent ffmpeg -y \
+        $(eval echo $FFMPEG_OUT_OPTS) \
+        -i "$INPUT_FILE" \
+        -f rawvideo -pix_fmt $YUV_FMT -s $RES \
+        -i "$TMP_DIR/tmp_audio_out.$S_TYPE" \
+        -pix_fmt $YUV_FMT \
+        "$OUTPUT_FILE"
+else
+    # Processing a video
+    cmdSilent ffmpeg -y \
+        $(eval echo $FFMPEG_OUT_OPTS) \
+        -f rawvideo -pix_fmt $YUV_FMT -s $RES \
+        -i "$TMP_DIR/tmp_audio_out.$S_TYPE" \
+        $AUDIO \
+        $VIDEO \
+        "$OUTPUT_FILE"
+fi
 
 cleanup 0
