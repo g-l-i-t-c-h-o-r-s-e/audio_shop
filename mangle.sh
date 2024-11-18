@@ -187,6 +187,11 @@ function parseArgs()
     export FFMPEG_IN_OPTS
     export FFMPEG_OUT_OPTS
     export UNUSED_ARGS
+
+    # Set default FFMPEG_OUT_OPTS if not set (i.e., if --blend is not used)
+    if [[ -z "$FFMPEG_OUT_OPTS" ]]; then
+        FFMPEG_OUT_OPTS="-f rawvideo -pix_fmt \$YUV_FMT -s \${RES}"
+    fi
 }
 
 function cmd()
@@ -298,22 +303,43 @@ cmdSilent sox --bits "$BITS" -c1 -r44100 --encoding unsigned-integer -t "$S_TYPE
 echo "Recreating image data from audio..."
 if [[ $(isImage "$1") == "true" ]]; then
     # Processing an image
-    cmdSilent ffmpeg -y \
-        $(eval echo $FFMPEG_OUT_OPTS) \
-        -i "$1" \
-        -f rawvideo -pix_fmt $YUV_FMT -s $RES \
-        -i "$TMP_DIR"/tmp_audio_out."$S_TYPE" \
-        -pix_fmt $YUV_FMT \
-        "$2"
+    if [[ -n "$FFMPEG_OUT_OPTS" && "$FFMPEG_OUT_OPTS" == *"-filter_complex"* ]]; then
+        # Blend case
+        cmdSilent ffmpeg -y \
+            $(eval echo $FFMPEG_OUT_OPTS) \
+            -i "$1" \
+            -f rawvideo -pix_fmt $YUV_FMT -s $RES \
+            -i "$TMP_DIR"/tmp_audio_out."$S_TYPE" \
+            -pix_fmt $YUV_FMT \
+            "$2"
+    else
+        # No blend case
+        cmdSilent ffmpeg -y \
+            -f rawvideo -pix_fmt $YUV_FMT -s $RES \
+            -i "$TMP_DIR"/tmp_audio_out."$S_TYPE" \
+            -pix_fmt $YUV_FMT \
+            "$2"
+    fi
 else
     # Processing a video
-    cmdSilent ffmpeg -y \
-        $(eval echo $FFMPEG_OUT_OPTS) \
-        -f rawvideo -pix_fmt $YUV_FMT -s $RES \
-        -i "$TMP_DIR"/tmp_audio_out."$S_TYPE" \
-        $AUDIO \
-        $VIDEO \
-        "$2"
+    if [[ -n "$FFMPEG_OUT_OPTS" && "$FFMPEG_OUT_OPTS" == *"-filter_complex"* ]]; then
+        # Blend case
+        cmdSilent ffmpeg -y \
+            $(eval echo $FFMPEG_OUT_OPTS) \
+            -f rawvideo -pix_fmt $YUV_FMT -s $RES \
+            -i "$TMP_DIR"/tmp_audio_out."$S_TYPE" \
+            $AUDIO \
+            $VIDEO \
+            "$2"
+    else
+        # No blend case
+        cmdSilent ffmpeg -y \
+            -f rawvideo -pix_fmt $YUV_FMT -s $RES \
+            -i "$TMP_DIR"/tmp_audio_out."$S_TYPE" \
+            $AUDIO \
+            $VIDEO \
+            "$2"
+    fi
 fi
 
 # [[ $AUDIO = *[!\ ]* ]] && echo "Injecting modified audio..."
