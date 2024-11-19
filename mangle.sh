@@ -206,12 +206,19 @@ function getAudio() {
 function getFramerate() {
     local input_file="$1"
     # Extract the raw framerate (e.g., "30000/1001")
-    local framerate_raw=$(ffprobe -v error -select_streams v:0 \
+    local framerate_raw
+    framerate_raw=$(ffprobe -v error -select_streams v:0 \
         -show_entries stream=r_frame_rate \
         -of default=noprint_wrappers=1:nokey=1 "$input_file")
     
+    if [[ -z "$framerate_raw" ]]; then
+        echo "0"
+        return
+    fi
+
     # Convert fractional framerate to decimal
-    local framerate_decimal=$(awk -F'/' '{ 
+    local framerate_decimal
+    framerate_decimal=$(awk -F'/' '{ 
         if ($2 != 0) 
             printf "%.6f", $1/$2; 
         else 
@@ -238,15 +245,30 @@ function extractGIFFrames() {
     local input_file="$1"
     local tmp_dir="$2"
 
+    echo "Extracting frames from GIF..."
     # Extract frames as individual PNG files
-    magick convert "$input_file" "$tmp_dir/frame_%04d.png"
+    magick "$input_file" "$tmp_dir/frame_%04d.png"
+    if [[ $? -ne 0 ]]; then
+        echo "Error: Failed to extract frames from GIF."
+        cleanup 1
+    fi
 
+    echo "Extracting frame delays..."
     # Extract frame delays (in centiseconds)
     magick identify -format "%T\n" "$input_file" > "$tmp_dir/delays.txt"
+    if [[ $? -ne 0 ]]; then
+        echo "Error: Failed to extract frame delays."
+        cleanup 1
+    fi
 
+    echo "Extracting loop count..."
     # Extract loop count (0 means infinite)
     local loop_count
     loop_count=$(magick identify -format "%[iterations]" "$input_file")
+    if [[ $? -ne 0 ]]; then
+        echo "Error: Failed to extract loop count."
+        cleanup 1
+    fi
     echo "$loop_count" > "$tmp_dir/loop_count.txt"
 }
 
@@ -256,12 +278,18 @@ function assembleGIF() {
     local output_file="$2"
     local tmp_dir="$3"
 
-    # Read delays
+    echo "Reading frame delays..."
+    # Read delays into an array
     mapfile -t delays < "$tmp_dir/delays.txt"
 
+    echo "Reading loop count..."
     # Read loop count
     loop_count=$(cat "$tmp_dir/loop_count.txt")
+    if [[ -z "$loop_count" ]]; then
+        loop_count=0
+    fi
 
+    echo "Assembling GIF with original frame delays and loop count..."
     # Prepare a temporary frames list with delays
     local frame_files=("$frame_dir"/*.png)
     local frames_with_delays=()
@@ -271,7 +299,11 @@ function assembleGIF() {
     done
 
     # Assemble GIF with ImageMagick
-    magick convert "${frames_with_delays[@]}" -loop "$loop_count" "$output_file"
+    magick "${frames_with_delays[@]}" -loop "$loop_count" "$output_file"
+    if [[ $? -ne 0 ]]; then
+        echo "Error: Failed to assemble GIF."
+        cleanup 1
+    fi
 }
 
 function checkDependencies() {
@@ -319,40 +351,51 @@ echo "SOX_OPTS:        $(eval echo "$SOX_OPTS")"
 if [[ "$IS_GIF" -eq 1 ]]; then
     FRAME_DIR="$TMP_DIR/frames"
     mkdir -p "$FRAME_DIR"
-    echo "Extracting GIF frames and delays.."
+    echo "Processing as GIF..."
+    
+    echo "Extracting GIF frames and delays..."
     extractGIFFrames "$INPUT_FILE" "$FRAME_DIR"
 
-    echo "Processing frames as images.."
+    echo "Processing frames as images..."
     for frame in "$FRAME_DIR"/*.png; do
         # Example image processing; replace with actual effects
         # Since GIFs are images, apply image-based effects using ImageMagick
         # Replace the following line with desired image processing commands
-        magick convert "$frame" -brightness-contrast 10x0 "$frame"
+        magick "$frame" -brightness-contrast 10x0 "$frame"
+        if [[ $? -ne 0 ]]; then
+            echo "Error: Failed to process frame $frame."
+            cleanup 1
+        fi
     done
 
-    echo "Reassembling GIF.."
+    echo "Reassembling GIF..."
     assembleGIF "$FRAME_DIR" "$OUTPUT_FILE" "$TMP_DIR"
 
 else
-    # Proceed with existing video processing
-    echo "Extracting raw image data.."
+    echo "Processing as standard video/audio..."
+    
+    echo "Extracting raw image data..."
     cmdSilent "ffmpeg -y -i \"$INPUT_FILE\" -pix_fmt $YUV_FMT $FFMPEG_IN_OPTS  $TMP_DIR/tmp.yuv"
 
-    [[ $AUDIO = *[!\ ]* ]] && echo "Extracting audio track.."
-    [[ $AUDIO = *[!\ ]* ]] && cmdSilent "ffmpeg -y -i \"$INPUT_FILE\" -q:a 0 -map a $TMP_DIR/audio_in.${AUDIO_TYPE}"
+    if [[ $AUDIO = *[!\ ]* ]]; then
+        echo "Extracting audio track..."
+        cmdSilent "ffmpeg -y -i \"$INPUT_FILE\" -q:a 0 -map a $TMP_DIR/audio_in.${AUDIO_TYPE}"
+    fi
 
-    echo "Processing as sound.."
+    echo "Processing audio as sound..."
     mv "$TMP_DIR"/tmp.yuv "$TMP_DIR"/tmp_audio_in."$S_TYPE"
     cmdSilent sox --bits "$BITS" -c1 -r44100 --encoding unsigned-integer -t "$S_TYPE" "$TMP_DIR"/tmp_audio_in."$S_TYPE"  \
                   --bits "$BITS" -c1 -r44100 --encoding unsigned-integer -t "$S_TYPE" "$TMP_DIR"/tmp_audio_out."$S_TYPE" \
                   "$SOX_OPTS"
 
-    [[ $AUDIO = *[!\ ]* ]] && echo "Processing audio track as sound.."
-    [[ $AUDIO = *[!\ ]* ]] && cmdSilent sox "$TMP_DIR"/audio_in.${AUDIO_TYPE}  \
-                                            "$TMP_DIR"/audio_out.${AUDIO_TYPE} \
-                                            "$SOX_OPTS"
+    if [[ $AUDIO = *[!\ ]* ]]; then
+        echo "Processing audio track as sound..."
+        cmdSilent sox "$TMP_DIR"/audio_in.${AUDIO_TYPE}  \
+                            "$TMP_DIR"/audio_out.${AUDIO_TYPE} \
+                            "$SOX_OPTS"
+    fi
 
-    echo "Recreating image data from audio.."
+    echo "Recreating image data from audio..."
     cmdSilent ffmpeg -y \
                      "$(eval echo $FFMPEG_OUT_OPTS)" \
                      -f rawvideo -pix_fmt $YUV_FMT -s $RES -r "$FRAMERATE" \
