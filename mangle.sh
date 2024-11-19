@@ -97,7 +97,7 @@ function parseArgs() {
     YUV_FMT=rgb24
     RES=""
     BLEND=""
-    IMAGE_EFFECTS=""
+    EFFECTS=()
 
     INPUT_FILE="$1"
     OUTPUT_FILE="$2"
@@ -131,16 +131,11 @@ function parseArgs() {
                 printHelp
                 ;;
             *)
-                break
+                # Assume it's an effect
+                EFFECTS+=("$1")
+                shift
                 ;;
         esac
-    done
-
-    # Remaining arguments are effects
-    EFFECTS=()
-    while [[ $# -gt 0 ]]; do
-        EFFECTS+=("$1")
-        shift
     done
 
     helpNeeded "$INPUT_FILE" "$OUTPUT_FILE" "${EFFECTS[0]}"
@@ -150,8 +145,6 @@ function parseArgs() {
     export RES
     export BLEND
     export EFFECTS
-
-    export S_TYPE="u$BITS"
 }
 
 function cmd() {
@@ -243,8 +236,8 @@ function extractGIFFrames() {
     local tmp_dir="$2"
 
     echo "Extracting frames from GIF..."
-    # Extract frames as individual PNG files
-    magick "$input_file" "$tmp_dir/frame_%04d.png"
+    # Extract frames as individual PNG files with downscaling to reduce memory usage
+    magick "$input_file" -resize 50% "$tmp_dir/frame_%04d.png"
     if [[ $? -ne 0 ]]; then
         echo "Error: Failed to extract frames from GIF."
         cleanup 1
