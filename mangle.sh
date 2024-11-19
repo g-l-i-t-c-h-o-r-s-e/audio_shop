@@ -60,10 +60,10 @@ function printHelp() {
     printEffects
     echo ""
     echo "Examples:"
-    echo "./mangle in.jpg out.jpg vol 11"
-    echo "./mangle in.mp4 out.mp4 echo 0.8 0.88 60 0.4"
-    echo "./mangle in.mp4 out.mp4 pitch 5 --res=1280x720"
-    echo "./mangle in.mp4 out.mp4 pitch 5 --blend=0.75 --color-format=yuv444p --bits=8"
+    echo "./mangle.sh input.jpg output.jpg vol 11"
+    echo "./mangle.sh input.mp4 output.mp4 echo 0.8 0.88 60 0.4"
+    echo "./mangle.sh input.mp4 output.mp4 pitch 5 --res=1280x720"
+    echo "./mangle.sh input.mp4 output.mp4 pitch 5 --blend=0.75 --color-format=yuv444p --bits=8"
     echo ""
     echo "A full list of effects can be found here: http://sox.sourceforge.net/sox.html#EFFECTS"
 
@@ -202,7 +202,7 @@ function getAudio() {
     [[ $AUDIO = *[!\ ]* ]] && echo "-i $TMP_DIR/audio_out.${AUDIO_TYPE}"
 }
 
-# New function to get framerate
+# Function to get framerate
 function getFramerate() {
     local input_file="$1"
     # Extract the raw framerate (e.g., "30000/1001")
@@ -221,7 +221,7 @@ function getFramerate() {
     echo "$framerate_decimal"
 }
 
-# New function to check if input is GIF
+# Function to check if input is GIF
 function isGIF() {
     local input_file="$1"
     local format_name
@@ -233,7 +233,7 @@ function isGIF() {
     fi
 }
 
-# New function to extract GIF frames and delays
+# Function to extract GIF frames and delays
 function extractGIFFrames() {
     local input_file="$1"
     local tmp_dir="$2"
@@ -250,7 +250,7 @@ function extractGIFFrames() {
     echo "$loop_count" > "$tmp_dir/loop_count.txt"
 }
 
-# New function to assemble GIF from frames and delays
+# Function to assemble GIF from frames and delays
 function assembleGIF() {
     local frame_dir="$1"
     local output_file="$2"
@@ -274,17 +274,6 @@ function assembleGIF() {
     magick convert "${frames_with_delays[@]}" -loop "$loop_count" "$output_file"
 }
 
-# New function to optimize GIF using gifsicle (optional)
-function optimizeGIF() {
-    local input_file="$1"
-    local output_file="$2"
-
-    gifsicle -O3 "$input_file" -o "$output_file"
-}
-
-# New function to check if input is GIF
-# (Already defined above)
-
 function checkDependencies() {
     for CMD in "$@"; do
         if ! type "$CMD" > /dev/null; then
@@ -293,7 +282,8 @@ function checkDependencies() {
     done
 }
 
-checkDependencies ffprobe ffmpeg sox tr magick gifsicle
+# Check for required dependencies (excluding gifsicle)
+checkDependencies ffprobe ffmpeg sox tr magick
 
 parseArgs "$@"
 
@@ -335,14 +325,13 @@ if [[ "$IS_GIF" -eq 1 ]]; then
     echo "Processing frames as images.."
     for frame in "$FRAME_DIR"/*.png; do
         # Example image processing; replace with actual effects
+        # Since GIFs are images, apply image-based effects using ImageMagick
+        # Replace the following line with desired image processing commands
         magick convert "$frame" -brightness-contrast 10x0 "$frame"
     done
 
     echo "Reassembling GIF.."
     assembleGIF "$FRAME_DIR" "$OUTPUT_FILE" "$TMP_DIR"
-
-    echo "Optimizing GIF.."
-    optimizeGIF "$OUTPUT_FILE" "$OUTPUT_FILE"
 
 else
     # Proceed with existing video processing
