@@ -97,7 +97,7 @@ function parseArgs() {
     YUV_FMT=rgb24
     RES=""
     BLEND=""
-    EFFECTS=()
+    IMAGE_EFFECTS=""
 
     INPUT_FILE="$1"
     OUTPUT_FILE="$2"
@@ -131,11 +131,16 @@ function parseArgs() {
                 printHelp
                 ;;
             *)
-                # Assume it's an effect
-                EFFECTS+=("$1")
-                shift
+                break
                 ;;
         esac
+    done
+
+    # Remaining arguments are effects
+    EFFECTS=()
+    while [[ $# -gt 0 ]]; do
+        EFFECTS+=("$1")
+        shift
     done
 
     helpNeeded "$INPUT_FILE" "$OUTPUT_FILE" "${EFFECTS[0]}"
@@ -145,6 +150,8 @@ function parseArgs() {
     export RES
     export BLEND
     export EFFECTS
+
+    export S_TYPE="u$BITS"
 }
 
 function cmd() {
@@ -235,26 +242,27 @@ function extractGIFFrames() {
     local input_file="$1"
     local tmp_dir="$2"
 
-    echo "Extracting frames from GIF..."
-    # Extract frames as individual PNG files with downscaling to reduce memory usage
-    magick "$input_file" -resize 50% "$tmp_dir/frame_%04d.png"
+    echo "Extracting frames from GIF with memory limits..."
+    # Limit memory usage to prevent system from killing the process
+    # Adjust the memory limit as per your system's capabilities
+    magick -limit memory 256MB "$input_file" "$tmp_dir/frame_%04d.png"
     if [[ $? -ne 0 ]]; then
         echo "Error: Failed to extract frames from GIF."
         cleanup 1
     fi
 
-    echo "Extracting frame delays..."
+    echo "Extracting frame delays with memory limits..."
     # Extract frame delays (in centiseconds)
-    magick identify -format "%T\n" "$input_file" > "$tmp_dir/delays.txt"
+    magick -limit memory 256MB identify -format "%T\n" "$input_file" > "$tmp_dir/delays.txt"
     if [[ $? -ne 0 ]]; then
         echo "Error: Failed to extract frame delays."
         cleanup 1
     fi
 
-    echo "Extracting loop count..."
+    echo "Extracting loop count with memory limits..."
     # Extract loop count (0 means infinite)
     local loop_count
-    loop_count=$(magick identify -format "%[iterations]" "$input_file")
+    loop_count=$(magick -limit memory 256MB identify -format "%[iterations]" "$input_file")
     if [[ $? -ne 0 ]]; then
         echo "Error: Failed to extract loop count."
         cleanup 1
@@ -288,8 +296,8 @@ function assembleGIF() {
         frames_with_delays+=("${frame_files[$i]}")
     done
 
-    # Assemble GIF with ImageMagick
-    magick "${frames_with_delays[@]}" -loop "$loop_count" "$output_file"
+    # Assemble GIF with ImageMagick, limiting memory usage
+    magick -limit memory 256MB "${frames_with_delays[@]}" -loop "$loop_count" "$output_file"
     if [[ $? -ne 0 ]]; then
         echo "Error: Failed to assemble GIF."
         cleanup 1
@@ -361,7 +369,7 @@ if [[ "$IS_GIF" -eq 1 ]]; then
         # Example image processing; replace with actual effects
         # Ensure ImageMagick commands are correctly using 'magick'
         # You can add multiple effects as needed
-        magick "$frame" -brightness-contrast 10x0 "$frame"
+        magick -limit memory 256MB "$frame" -brightness-contrast 10x0 "$frame"
         if [[ $? -ne 0 ]]; then
             echo "Error: Failed to process frame $frame."
             cleanup 1
