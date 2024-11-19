@@ -56,7 +56,7 @@ function printHelp()
     echo "Options:"
     echo "--bits=X          -- Set audio sample size in bits, 8/16/24"
     echo "--blend=X         -- Blend the distorted video with original video, 0.5"
-    echo "--color-format=X  -- Color space/format, rgb24/yuv444p/yuyv422. Full list: $ ffmpeg -pix_fmts"
+    echo "--color-format=X  -- Color space/format, rgb24/yuv444p/yuyv422. Full list: \$ ffmpeg -pix_fmts"
     echo "--effects         -- Suggest some effects"
     echo "--help            -- Display this information"
     echo "--res=WxH         -- Set output resolution, 1920x1080"
@@ -192,14 +192,14 @@ function cmdSilent()
 
 function getResolution()
 {
-    eval $(cmd ffprobe -v error -of flat=s=_ -select_streams v:0 -show_entries stream=height,width \"$1\")
+    eval $(cmd ffprobe -v error -of flat=s=_ -select_streams v:0 -show_entries stream=height,width "$1")
     RES="${streams_stream_0_width}${2}${streams_stream_0_height}"
     echo "$RES"
 }
 
 function getFrames()
 {
-    FRAMES=$(cmd ffprobe -v error -select_streams v:0 -show_entries stream=nb_frames -of default=noprint_wrappers=1:nokey=1 \"$1\")
+    FRAMES=$(cmd ffprobe -v error -select_streams v:0 -show_entries stream=nb_frames -of default=noprint_wrappers=1:nokey=1 "$1")
     REGEXP_INTEGER='^[0-9]+$'
     if ! [[ $FRAMES =~ $REGEXP_INTEGER ]] ; then
         echo ""
@@ -211,8 +211,27 @@ function getFrames()
 
 function getAudio()
 {
-    AUDIO=$(cmd ffprobe -i \"$1\" -show_streams -select_streams a -loglevel error)
+    AUDIO=$(cmd ffprobe -i "$1" -show_streams -select_streams a -loglevel error)
     [[ $AUDIO = *[!\ ]* ]] && echo "-i $TMP_DIR/audio_out.${AUDIO_TYPE}"
+}
+
+# New function to get framerate
+function getFramerate() {
+    local input_file="$1"
+    # Extract the raw framerate (e.g., "30000/1001")
+    local framerate_raw=$(ffprobe -v error -select_streams v:0 \
+        -show_entries stream=r_frame_rate \
+        -of default=noprint_wrappers=1:nokey=1 "$input_file")
+    
+    # Convert fractional framerate to decimal
+    local framerate_decimal=$(awk -F'/' '{ 
+        if ($2 != 0) 
+            printf "%.6f", $1/$2; 
+        else 
+            print "0" 
+    }' <<< "$framerate_raw")
+    
+    echo "$framerate_decimal"
 }
 
 function checkDependencies()
@@ -233,11 +252,13 @@ TMP_DIR=$(mktemp -d "${SCRIPT_DIR}/tmp_audio_shop_XXXXXX")
 
 AUDIO_TYPE="mp3"
 RES=${RES:-"$(getResolution "$1" x)"}
+FRAMERATE=$(getFramerate "$1")            # Get framerate
 VIDEO=${VIDEO:-"$(getFrames "$1")"}
 AUDIO=${AUDIO:-"$(getAudio "$1")"}
 
 echo "TMP_DIR:         $TMP_DIR"
 echo "RES:             $RES"
+echo "FRAMERATE:       $FRAMERATE"       # Display framerate
 echo "VIDEO:           $VIDEO"
 echo "AUDIO:           $AUDIO"
 echo "FFMPEG_IN_OPTS:  $(eval echo "$FFMPEG_IN_OPTS")"
@@ -264,11 +285,12 @@ cmdSilent sox --bits "$BITS" -c1 -r44100 --encoding unsigned-integer -t "$S_TYPE
 echo "Recreating image data from audio.."
 cmdSilent ffmpeg -y \
                  "$(eval echo $FFMPEG_OUT_OPTS)" \
-                 -f rawvideo -pix_fmt $YUV_FMT -s $RES \
-                 -i $TMP_DIR/tmp_audio_out.$S_TYPE \
+                 -f rawvideo -pix_fmt $YUV_FMT -s $RES -r "$FRAMERATE" \
+                 -i "$TMP_DIR/tmp_audio_out.$S_TYPE" \
                  $AUDIO \
                  $VIDEO \
-                 \"$2\"
+                 -r "$FRAMERATE" \
+                 "$2"
 
 # [[ $AUDIO = *[!\ ]* ]] && echo "Injecting modified audio.."
 # [[ $AUDIO = *[!\ ]* ]] && cmdSilent ffmpeg -y \
