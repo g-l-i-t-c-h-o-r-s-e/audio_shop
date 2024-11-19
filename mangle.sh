@@ -3,8 +3,7 @@
 # Determine the directory where the script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-function cleanup()
-{
+function cleanup() {
     if [[ -z "${TMP_DIR}" ]]; then
         exit "$1"
     elif [[ ! "${TMP_DIR}" == "${SCRIPT_DIR}/tmp_audio_shop_"* ]]; then
@@ -18,17 +17,15 @@ function cleanup()
 # Ensure cleanup is called on script exit, interruption, or termination
 trap 'cleanup 1' EXIT SIGINT SIGTERM
 
-function printDependencies()
-{
+function printDependencies() {
     echo "Error: \"$1\" could not be found, but is required"
     echo ""
-    echo "This script requires ffmpeg and Sox to be installed"
+    echo "This script requires ffmpeg, Sox, and ImageMagick to be installed"
 
     cleanup 1
 }
 
-function printEffects()
-{
+function printEffects() {
     echo "Effects:"
     echo "bass 5"
     echo "echo 0.8 0.88 60 0.4"
@@ -45,8 +42,7 @@ function printEffects()
     echo "vol 10"
 }
 
-function printHelp()
-{
+function printHelp() {
     echo "$ ./mangle.sh in.jpg out.png [effect [effect]]"
     echo ""
     echo "This script lets you interpret image or video data as sound,"
@@ -74,8 +70,7 @@ function printHelp()
     cleanup 1
 }
 
-function helpNeeded()
-{
+function helpNeeded() {
     if [[ -z ${1+x} ]]; then
         echo -e "Input file not provided!\n"
         printHelp
@@ -85,72 +80,69 @@ function helpNeeded()
     fi
 
     if [[ -z ${2+x} ]]; then
-         echo -e "Output file not provided!\n"
+        echo -e "Output file not provided!\n"
         printHelp
     fi
 
     if [[ -z ${3+x} ]]; then
-         echo -e "No effect specified\n"
+        echo -e "No effect specified\n"
         printHelp
     fi
 }
 
-function parseArgs()
-{
+function parseArgs() {
     # Default values
     BITS=8
     YUV_FMT=rgb24
 
-    for i in "${@}"
-    do
-    case $i in
-        --effects)
-            printEffects
-            cleanup 0
-        ;;
-        --help)
-            printHelp
-        ;;
-        *)
-        ;;
-    esac
+    for i in "${@}"; do
+        case $i in
+            --effects)
+                printEffects
+                cleanup 0
+            ;;
+            --help)
+                printHelp
+            ;;
+            *)
+            ;;
+        esac
     done
 
-    for i in "${@:3}"
-    do
-    case $i in
-        --res=*)
-            export RES=${i#*=}
-            RES_COLON=$(echo "$RES" | tr x :)
-            FFMPEG_IN_OPTS="$FFMPEG_IN_OPTS -vf scale=$RES_COLON"
-        ;;
-        --bits=*)
-            BITS=${i#*=}
-        ;;
-        --blend=*)
-            BLEND=${i#*=}
-            FFMPEG_OUT_OPTS="$FFMPEG_OUT_OPTS -f rawvideo -pix_fmt \$YUV_FMT -s \${RES} -i \${TMP_DIR}/tmp_audio_out.\${S_TYPE}"
-            FFMPEG_OUT_OPTS="$FFMPEG_OUT_OPTS -filter_complex \\\""
-            FFMPEG_OUT_OPTS="$FFMPEG_OUT_OPTS [0:v]setpts=PTS-STARTPTS, scale=\${RES}[top]\;"
-            FFMPEG_OUT_OPTS="$FFMPEG_OUT_OPTS [1:v]setpts=PTS-STARTPTS, scale=\${RES},"
-            FFMPEG_OUT_OPTS="$FFMPEG_OUT_OPTS format=yuva444p,colorchannelmixer=aa=${BLEND}[bottom]\;"
-            FFMPEG_OUT_OPTS="$FFMPEG_OUT_OPTS [top][bottom]overlay=shortest=1\\\""
-        ;;
-        --color-format=*)
-            YUV_FMT=${i#*=}
-        ;;
-        --help)
-            printHelp
-        ;;
-        --*)
-            echo -e "Option $i not recognized\n"
-            printHelp
-        ;;
-        *)
-            # Unknown option, hand them back to SOX
-            SOX_OPTS="$SOX_OPTS $i"
-        ;;
-    esac
+    for i in "${@:3}"; do
+        case $i in
+            --res=*)
+                export RES=${i#*=}
+                RES_COLON=$(echo "$RES" | tr x :)
+                FFMPEG_IN_OPTS="$FFMPEG_IN_OPTS -vf scale=$RES_COLON"
+            ;;
+            --bits=*)
+                BITS=${i#*=}
+            ;;
+            --blend=*)
+                BLEND=${i#*=}
+                FFMPEG_OUT_OPTS="$FFMPEG_OUT_OPTS -f rawvideo -pix_fmt \$YUV_FMT -s \${RES} -i \${TMP_DIR}/tmp_audio_out.\${S_TYPE}"
+                FFMPEG_OUT_OPTS="$FFMPEG_OUT_OPTS -filter_complex \\\""
+                FFMPEG_OUT_OPTS="$FFMPEG_OUT_OPTS [0:v]setpts=PTS-STARTPTS, scale=\${RES}[top]\;"
+                FFMPEG_OUT_OPTS="$FFMPEG_OUT_OPTS [1:v]setpts=PTS-STARTPTS, scale=\${RES},"
+                FFMPEG_OUT_OPTS="$FFMPEG_OUT_OPTS format=yuva444p,colorchannelmixer=aa=${BLEND}[bottom]\;"
+                FFMPEG_OUT_OPTS="$FFMPEG_OUT_OPTS [top][bottom]overlay=shortest=1\\\""
+            ;;
+            --color-format=*)
+                YUV_FMT=${i#*=}
+            ;;
+            --help)
+                printHelp
+            ;;
+            --*)
+                echo -e "Option $i not recognized\n"
+                printHelp
+            ;;
+            *)
+                # Unknown option, hand them back to SOX
+                SOX_OPTS="$SOX_OPTS $i"
+            ;;
+        esac
     done
 
     helpNeeded "$@"
@@ -165,8 +157,7 @@ function parseArgs()
     export UNUSED_ARGS
 }
 
-function cmd()
-{
+function cmd() {
     OUTPUT=$(eval "$@" 2>&1)
     if (( $? )); then
         echo -e "\n----- ERROR -----"
@@ -178,8 +169,7 @@ function cmd()
     echo "$OUTPUT"
 }
 
-function cmdSilent()
-{
+function cmdSilent() {
     OUTPUT=$(eval "$@" 2>&1)
     if (( $? )); then
         echo -e "\n----- ERROR -----"
@@ -190,18 +180,16 @@ function cmdSilent()
     fi
 }
 
-function getResolution()
-{
+function getResolution() {
     eval $(cmd ffprobe -v error -of flat=s=_ -select_streams v:0 -show_entries stream=height,width "$1")
     RES="${streams_stream_0_width}${2}${streams_stream_0_height}"
     echo "$RES"
 }
 
-function getFrames()
-{
+function getFrames() {
     FRAMES=$(cmd ffprobe -v error -select_streams v:0 -show_entries stream=nb_frames -of default=noprint_wrappers=1:nokey=1 "$1")
     REGEXP_INTEGER='^[0-9]+$'
-    if ! [[ $FRAMES =~ $REGEXP_INTEGER ]] ; then
+    if ! [[ $FRAMES =~ $REGEXP_INTEGER ]]; then
         echo ""
         return 0
     fi
@@ -209,8 +197,7 @@ function getFrames()
     return 0
 }
 
-function getAudio()
-{
+function getAudio() {
     AUDIO=$(cmd ffprobe -i "$1" -show_streams -select_streams a -loglevel error)
     [[ $AUDIO = *[!\ ]* ]] && echo "-i $TMP_DIR/audio_out.${AUDIO_TYPE}"
 }
@@ -234,68 +221,157 @@ function getFramerate() {
     echo "$framerate_decimal"
 }
 
-function checkDependencies()
-{
-    for CMD in "$@"
-    do
+# New function to check if input is GIF
+function isGIF() {
+    local input_file="$1"
+    local format_name
+    format_name=$(ffprobe -v error -select_streams v:0 -show_entries format=format_name -of default=noprint_wrappers=1:nokey=1 "$input_file")
+    if [[ "$format_name" == "gif" ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# New function to extract GIF frames and delays
+function extractGIFFrames() {
+    local input_file="$1"
+    local tmp_dir="$2"
+
+    # Extract frames as individual PNG files
+    magick convert "$input_file" "$tmp_dir/frame_%04d.png"
+
+    # Extract frame delays (in centiseconds)
+    magick identify -format "%T\n" "$input_file" > "$tmp_dir/delays.txt"
+
+    # Extract loop count (0 means infinite)
+    local loop_count
+    loop_count=$(magick identify -format "%[iterations]" "$input_file")
+    echo "$loop_count" > "$tmp_dir/loop_count.txt"
+}
+
+# New function to assemble GIF from frames and delays
+function assembleGIF() {
+    local frame_dir="$1"
+    local output_file="$2"
+    local tmp_dir="$3"
+
+    # Read delays
+    mapfile -t delays < "$tmp_dir/delays.txt"
+
+    # Read loop count
+    loop_count=$(cat "$tmp_dir/loop_count.txt")
+
+    # Prepare a temporary frames list with delays
+    local frame_files=("$frame_dir"/*.png)
+    local frames_with_delays=()
+    for i in "${!frame_files[@]}"; do
+        frames_with_delays+=("-delay" "${delays[$i]}")
+        frames_with_delays+=("${frame_files[$i]}")
+    done
+
+    # Assemble GIF with ImageMagick
+    magick convert "${frames_with_delays[@]}" -loop "$loop_count" "$output_file"
+}
+
+# New function to optimize GIF using gifsicle (optional)
+function optimizeGIF() {
+    local input_file="$1"
+    local output_file="$2"
+
+    gifsicle -O3 "$input_file" -o "$output_file"
+}
+
+# New function to check if input is GIF
+# (Already defined above)
+
+function checkDependencies() {
+    for CMD in "$@"; do
         if ! type "$CMD" > /dev/null; then
             printDependencies "$CMD"
         fi
     done
 }
 
-checkDependencies ffprobe ffmpeg sox tr
+checkDependencies ffprobe ffmpeg sox tr magick gifsicle
+
 parseArgs "$@"
 
 # Create a unique temporary directory within the script's directory
 TMP_DIR=$(mktemp -d "${SCRIPT_DIR}/tmp_audio_shop_XXXXXX")
 
+INPUT_FILE="$1"
+OUTPUT_FILE="$2"
+
+if isGIF "$INPUT_FILE"; then
+    IS_GIF=1
+else
+    IS_GIF=0
+fi
+
+export IS_GIF
+
 AUDIO_TYPE="mp3"
-RES=${RES:-"$(getResolution "$1" x)"}
-FRAMERATE=$(getFramerate "$1")            # Get framerate
-VIDEO=${VIDEO:-"$(getFrames "$1")"}
-AUDIO=${AUDIO:-"$(getAudio "$1")"}
+RES=${RES:-"$(getResolution "$INPUT_FILE" x)"}
+FRAMERATE=$(getFramerate "$INPUT_FILE")
+VIDEO=${VIDEO:-"$(getFrames "$INPUT_FILE")"}
+AUDIO=${AUDIO:-"$(getAudio "$INPUT_FILE")"}
 
 echo "TMP_DIR:         $TMP_DIR"
 echo "RES:             $RES"
-echo "FRAMERATE:       $FRAMERATE"       # Display framerate
+echo "FRAMERATE:       $FRAMERATE"
 echo "VIDEO:           $VIDEO"
 echo "AUDIO:           $AUDIO"
 echo "FFMPEG_IN_OPTS:  $(eval echo "$FFMPEG_IN_OPTS")"
 echo "FFMPEG_OUT_OPTS: $(eval echo "$FFMPEG_OUT_OPTS")"
 echo "SOX_OPTS:        $(eval echo "$SOX_OPTS")"
 
-echo "Extracting raw image data.."
-cmdSilent "ffmpeg -y -i \"$1\" -pix_fmt $YUV_FMT $FFMPEG_IN_OPTS  $TMP_DIR/tmp.yuv"
+if [[ "$IS_GIF" -eq 1 ]]; then
+    FRAME_DIR="$TMP_DIR/frames"
+    mkdir -p "$FRAME_DIR"
+    echo "Extracting GIF frames and delays.."
+    extractGIFFrames "$INPUT_FILE" "$FRAME_DIR"
 
-[[ $AUDIO = *[!\ ]* ]] && echo "Extracting audio track.."
-[[ $AUDIO = *[!\ ]* ]] && cmdSilent "ffmpeg -y -i \"$1\" -q:a 0 -map a $TMP_DIR/audio_in.${AUDIO_TYPE}"
+    echo "Processing frames as images.."
+    for frame in "$FRAME_DIR"/*.png; do
+        # Example image processing; replace with actual effects
+        magick convert "$frame" -brightness-contrast 10x0 "$frame"
+    done
 
-echo "Processing as sound.."
-mv "$TMP_DIR"/tmp.yuv "$TMP_DIR"/tmp_audio_in."$S_TYPE"
-cmdSilent sox --bits "$BITS" -c1 -r44100 --encoding unsigned-integer -t "$S_TYPE" "$TMP_DIR"/tmp_audio_in."$S_TYPE"  \
-              --bits "$BITS" -c1 -r44100 --encoding unsigned-integer -t "$S_TYPE" "$TMP_DIR"/tmp_audio_out."$S_TYPE" \
-              "$SOX_OPTS"
+    echo "Reassembling GIF.."
+    assembleGIF "$FRAME_DIR" "$OUTPUT_FILE" "$TMP_DIR"
 
-[[ $AUDIO = *[!\ ]* ]] && echo "Processing audio track as sound.."
-[[ $AUDIO = *[!\ ]* ]] && cmdSilent sox "$TMP_DIR"/audio_in.${AUDIO_TYPE}  \
-                                        "$TMP_DIR"/audio_out.${AUDIO_TYPE} \
-                                        "$SOX_OPTS"
+    echo "Optimizing GIF.."
+    optimizeGIF "$OUTPUT_FILE" "$OUTPUT_FILE"
 
-echo "Recreating image data from audio.."
-cmdSilent ffmpeg -y \
-                 "$(eval echo $FFMPEG_OUT_OPTS)" \
-                 -f rawvideo -pix_fmt $YUV_FMT -s $RES -r "$FRAMERATE" \
-                 -i "$TMP_DIR/tmp_audio_out.$S_TYPE" \
-                 $AUDIO \
-                 $VIDEO \
-                 -r "$FRAMERATE" \
-                 "$2"
+else
+    # Proceed with existing video processing
+    echo "Extracting raw image data.."
+    cmdSilent "ffmpeg -y -i \"$INPUT_FILE\" -pix_fmt $YUV_FMT $FFMPEG_IN_OPTS  $TMP_DIR/tmp.yuv"
 
-# [[ $AUDIO = *[!\ ]* ]] && echo "Injecting modified audio.."
-# [[ $AUDIO = *[!\ ]* ]] && cmdSilent ffmpeg -y \
-#                                           -i \"$2\" \
-#                                           $AUDIO \
-#                                           \"$2\"
+    [[ $AUDIO = *[!\ ]* ]] && echo "Extracting audio track.."
+    [[ $AUDIO = *[!\ ]* ]] && cmdSilent "ffmpeg -y -i \"$INPUT_FILE\" -q:a 0 -map a $TMP_DIR/audio_in.${AUDIO_TYPE}"
+
+    echo "Processing as sound.."
+    mv "$TMP_DIR"/tmp.yuv "$TMP_DIR"/tmp_audio_in."$S_TYPE"
+    cmdSilent sox --bits "$BITS" -c1 -r44100 --encoding unsigned-integer -t "$S_TYPE" "$TMP_DIR"/tmp_audio_in."$S_TYPE"  \
+                  --bits "$BITS" -c1 -r44100 --encoding unsigned-integer -t "$S_TYPE" "$TMP_DIR"/tmp_audio_out."$S_TYPE" \
+                  "$SOX_OPTS"
+
+    [[ $AUDIO = *[!\ ]* ]] && echo "Processing audio track as sound.."
+    [[ $AUDIO = *[!\ ]* ]] && cmdSilent sox "$TMP_DIR"/audio_in.${AUDIO_TYPE}  \
+                                            "$TMP_DIR"/audio_out.${AUDIO_TYPE} \
+                                            "$SOX_OPTS"
+
+    echo "Recreating image data from audio.."
+    cmdSilent ffmpeg -y \
+                     "$(eval echo $FFMPEG_OUT_OPTS)" \
+                     -f rawvideo -pix_fmt $YUV_FMT -s $RES -r "$FRAMERATE" \
+                     -i "$TMP_DIR/tmp_audio_out.$S_TYPE" \
+                     $AUDIO \
+                     $VIDEO \
+                     -r "$FRAMERATE" \
+                     "$OUTPUT_FILE"
+fi
 
 cleanup 0
